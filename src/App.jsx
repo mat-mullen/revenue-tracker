@@ -4,6 +4,7 @@ import RevenueChart from './components/RevenueChart'
 import ClientTable from './components/ClientTable'
 import ClientForm from './components/ClientForm'
 import HourTracking from './components/HourTracking'
+import PasswordGate from './components/PasswordGate'
 import { initialClients } from './data/initialClients'
 import './App.css'
 
@@ -100,6 +101,7 @@ export default function App() {
     .toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
   return (
+    <PasswordGate>
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
@@ -202,5 +204,6 @@ export default function App() {
         />
       )}
     </div>
+    </PasswordGate>
   )
 }

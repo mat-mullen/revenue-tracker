@@ -33,6 +33,48 @@
   --radius-sm: 4px;
 }
 
+/* ── Password gate ───────────────────────────────────── */
+.password-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111111;
+  padding: 24px;
+}
+
+.password-box {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 40px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+}
+
+.password-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.password-logo-img {
+  width: 160px;
+  height: auto;
+  display: block;
+  margin: 0 auto 14px;
+}
+
+.password-logo p {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.password-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 0;
+}
+
 /* ── Reset / Base ────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -471,8 +513,11 @@ body {
 
 .metric-value--sm { font-size: 22px; }
 .tracking-summary--2col { grid-template-columns: repeat(2, 1fr); max-width: 560px; }
+.tracking-summary--3col { grid-template-columns: repeat(3, 1fr); max-width: 860px; }
 .metric-card--red { border-top-color: var(--danger); }
 .metric-card--red .metric-value { color: var(--danger); }
+.metric-card--brand { border-top-color: var(--brand); }
+.metric-card--brand .metric-value { color: var(--brand); }
 
 .section-note { font-size: 12px; color: var(--muted); }
 
