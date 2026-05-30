@@ -127,7 +127,19 @@ export default function ClientTable({ clients, defaultRate, onEdit, onDelete, on
         <tbody>
           {rows.map(({ client, monthly, annual }) => (
             <tr key={client.id}>
-              <td className="client-name">{client.name}</td>
+              <td className="client-name">
+                {client.name}
+                {client.status === 'lost' && (client.lostReason || client.lostContactEmail) && (
+                  <div className="lost-info">
+                    {client.lostReason && <span className="lost-reason">"{client.lostReason}"</span>}
+                    {client.lostContactEmail && (
+                      <a href={`mailto:${client.lostContactEmail}`} className="lost-email">
+                        ✉ {client.lostContactEmail}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </td>
               <td>
                 <span className="badge badge--type">{TYPE_LABELS[client.type]}</span>
               </td>

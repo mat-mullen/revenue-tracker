@@ -4,6 +4,7 @@ import RevenueChart from './components/RevenueChart'
 import ClientTable from './components/ClientTable'
 import ClientForm from './components/ClientForm'
 import HourTracking from './components/HourTracking'
+import LostReasonModal from './components/LostReasonModal'
 import PasswordGate from './components/PasswordGate'
 import { initialClients } from './data/initialClients'
 import './App.css'
@@ -37,6 +38,7 @@ export default function App() {
   const [filter, setFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
+  const [lostModal, setLostModal] = useState({ open: false, id: null })
 
   useEffect(() => {
     localStorage.setItem(KEY_CLIENTS, JSON.stringify(clients))
@@ -93,8 +95,21 @@ export default function App() {
   }
 
   function handleStatusChange(id, status) {
-    setClients(prev => prev.map(c => c.id === id ? { ...c, status } : c))
+    if (status === 'lost') {
+      setLostModal({ open: true, id })
+    } else {
+      setClients(prev => prev.map(c => c.id === id ? { ...c, status } : c))
+    }
   }
+
+  function handleLostConfirm({ reason, email }) {
+    setClients(prev => prev.map(c => c.id === lostModal.id
+      ? { ...c, status: 'lost', lostReason: reason, lostContactEmail: email }
+      : c))
+    setLostModal({ open: false, id: null })
+  }
+
+  const lostClient = lostModal.open ? clients.find(c => c.id === lostModal.id) : null
 
   function handleMoveToExisting(id) {
     const client = clients.find(c => c.id === id)
@@ -215,6 +230,15 @@ export default function App() {
           defaultRate={defaultRate}
           onSave={handleSave}
           onClose={closeForm}
+        />
+      )}
+
+      {lostModal.open && lostClient && (
+        <LostReasonModal
+          name={lostClient.name}
+          existing={{ reason: lostClient.lostReason, email: lostClient.lostContactEmail }}
+          onConfirm={handleLostConfirm}
+          onCancel={() => setLostModal({ open: false, id: null })}
         />
       )}
     </div>
