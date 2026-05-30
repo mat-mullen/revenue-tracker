@@ -1,9 +1,19 @@
 import { useState, useEffect } from 'react'
 import { activeClients } from '../data/activeClients'
+import ClientDetailModal from './ClientDetailModal'
 
-const STATUS_KEY  = 'arf-tracking-statuses'
-const HIDDEN_KEY  = 'arf-hidden-clients'
-const STATUS_ORDER = { active: 0, inactive: 1, lost: 2 }
+const STATUS_KEY       = 'arf-tracking-statuses'
+const HIDDEN_KEY       = 'arf-hidden-clients'
+const LOST_REASONS_KEY = 'arf-lost-reasons'
+const DETAILS_KEY      = 'arf-client-details'
+const STATUS_ORDER     = { active: 0, inactive: 1, lost: 2 }
+
+function hasDetails(d) {
+  if (!d) return false
+  return !!(d.primaryContact?.name || d.primaryContact?.email ||
+            d.billingContact?.name || d.billingContact?.email ||
+            d.documents?.sow || d.documents?.msa)
+}
 
 function SortIcon({ active, dir }) {
   if (!active) return <span className="sort-icon sort-icon--idle">↕</span>
@@ -19,7 +29,19 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
     try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')) } catch { return new Set() }
   })
 
-  const [tab, setTab] = useState('retainers')
+  const [lostReasons, setLostReasons] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LOST_REASONS_KEY) || '{}') } catch { return {} }
+  })
+
+  const [lostModal, setLostModal] = useState({ open: false, name: '' })
+
+  const [clientDetails, setClientDetails] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DETAILS_KEY) || '{}') } catch { return {} }
+  })
+
+  const [detailModal, setDetailModal] = useState({ open: false, name: '' })
+
+  const [tab, setTab] = useState('all')
 
   useEffect(() => {
     localStorage.setItem(STATUS_KEY, JSON.stringify(statuses))
@@ -29,13 +51,55 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
     localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]))
   }, [hidden])
 
+  useEffect(() => {
+    localStorage.setItem(LOST_REASONS_KEY, JSON.stringify(lostReasons))
+  }, [lostReasons])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DETAILS_KEY, JSON.stringify(clientDetails))
+    } catch {
+      window.alert('Could not save — browser storage is full. Try removing a large document.')
+    }
+  }, [clientDetails])
+
   function toggleStatus(name, value) {
     setStatuses(prev => ({ ...prev, [name]: value }))
   }
 
+  // Intercept "lost" selections — show modal instead of immediately updating
+  function handleToggle(name, value) {
+    if (value === 'lost') {
+      setLostModal({ open: true, name })
+    } else {
+      toggleStatus(name, value)
+    }
+  }
+
+  function handleLostConfirm({ reason, email }) {
+    toggleStatus(lostModal.name, 'lost')
+    if (reason || email) {
+      setLostReasons(prev => ({ ...prev, [lostModal.name]: { reason, email } }))
+    }
+    setLostModal({ open: false, name: '' })
+  }
+
+  function handleLostCancel() {
+    setLostModal({ open: false, name: '' })
+  }
+
+  function handleOpenDetail(name) {
+    setDetailModal({ open: true, name })
+  }
+
+  function handleSaveDetail(details) {
+    setClientDetails(prev => ({ ...prev, [detailModal.name]: details }))
+    setDetailModal({ open: false, name: '' })
+  }
+
   // Normalise form-added existing clients into the same shape as activeClients
   const normalisedAdded = addedClients.map(c => ({
-    _id: c.id,                  // keep original id for edit/delete routing
+    _id: c.id,
     name: c.name,
     budgetHours: c.hoursPerMonth || 0,
     budgetType: c.type === 'project' ? 'project' : 'monthly',
@@ -68,10 +132,9 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
   const projectValue = c => c.pricingType === 'fixed' ? c.fixedAmount : c.budgetHours * (c.hourlyRate || defaultRate)
   const totalProjectRevenue = activeProjects.reduce((s, c) => s + projectValue(c), 0)
 
-  // Edit: convert static client data to ClientForm shape, then open the form
   function handleEdit(c) {
     const formData = c._id
-      ? addedClients.find(a => a.id === c._id) // managed: pass original client object
+      ? addedClients.find(a => a.id === c._id)
       : {
           name: c.name,
           clientCategory: 'existing',
@@ -85,7 +148,6 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
     onEdit(formData)
   }
 
-  // Delete: managed → remove from state; static → add to hidden list
   function handleDelete(c) {
     if (!window.confirm(`Remove "${c.name}"?`)) return
     if (c._id) {
@@ -95,11 +157,22 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
     }
   }
 
-  const tableProps = { defaultRate, onToggle: toggleStatus, onEdit: handleEdit, onDelete: handleDelete }
+  const tableProps = {
+    defaultRate,
+    onToggle: handleToggle,
+    onEdit: handleEdit,
+    onDelete: handleDelete,
+    onOpenDetail: handleOpenDetail,
+    lostReasons,
+    clientDetails,
+  }
 
   return (
     <div className="tracking-wrap">
       <div className="tracking-tabs">
+        <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>
+          All <span className="count-badge">{activeRetainers.length + activeProjects.length}</span>
+        </button>
         <button className={tab === 'retainers' ? 'active' : ''} onClick={() => setTab('retainers')}>
           Active Retainers <span className="count-badge">{activeRetainers.length}</span>
         </button>
@@ -114,7 +187,34 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
         </button>
       </div>
 
-      {tab === 'retainers' ? (
+      {tab === 'all' ? (
+        <>
+          <div className="tracking-summary tracking-summary--2col">
+            <SummaryCard label="Est. Monthly Retainer Revenue" value={'$' + totalMonthlyRevenue.toLocaleString()}
+              sub={'$' + (totalMonthlyRevenue * 12).toLocaleString() + ' annually'} accent="green" />
+            <SummaryCard label="Estimated Project Revenue" value={'$' + totalProjectRevenue.toLocaleString()}
+              sub={activeProjects.length + ' active project' + (activeProjects.length !== 1 ? 's' : '')} accent="brand" />
+          </div>
+          <div className="section">
+            <div className="section-head">
+              <h2 className="section-title">Active Retainers <span className="count-badge">{activeRetainers.length}</span></h2>
+              <span className="section-note">Using default rate ${defaultRate}/hr</span>
+            </div>
+            {activeRetainers.length === 0
+              ? <div className="empty-state">No active retainers.</div>
+              : <RetainerTable clients={activeRetainers} {...tableProps} />}
+          </div>
+          <div className="section">
+            <div className="section-head">
+              <h2 className="section-title">Active Projects <span className="count-badge">{activeProjects.length}</span></h2>
+              <span className="section-note">Hourly projects use default rate ${defaultRate}/hr</span>
+            </div>
+            {activeProjects.length === 0
+              ? <div className="empty-state">No active projects.</div>
+              : <ProjectTable clients={activeProjects} {...tableProps} />}
+          </div>
+        </>
+      ) : tab === 'retainers' ? (
         <>
           <div className="tracking-summary tracking-summary--2col">
             <SummaryCard label="Est. Monthly Revenue" value={'$' + totalMonthlyRevenue.toLocaleString()}
@@ -166,6 +266,68 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
             : <RetainerTable clients={lost} {...tableProps} />}
         </div>
       )}
+
+      {lostModal.open && (
+        <LostReasonModal
+          name={lostModal.name}
+          existing={lostReasons[lostModal.name]}
+          onConfirm={handleLostConfirm}
+          onCancel={handleLostCancel}
+        />
+      )}
+
+      {detailModal.open && (
+        <ClientDetailModal
+          name={detailModal.name}
+          existing={clientDetails[detailModal.name]}
+          onSave={handleSaveDetail}
+          onClose={() => setDetailModal({ open: false, name: '' })}
+        />
+      )}
+    </div>
+  )
+}
+
+function LostReasonModal({ name, existing, onConfirm, onCancel }) {
+  const [reason, setReason] = useState(existing?.reason || '')
+  const [email,  setEmail]  = useState(existing?.email  || '')
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h2>Mark as Lost — {name}</h2>
+          <button className="modal-close" onClick={onCancel}>×</button>
+        </div>
+        <div className="client-form">
+          <div className="form-row">
+            <label>Why was this client lost?</label>
+            <textarea
+              className="form-notes"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="e.g. Budget cuts, went with a competitor, project ended…"
+              rows={3}
+              autoFocus
+            />
+          </div>
+          <div className="form-row">
+            <label>Contact Email (for future outreach)</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="e.g. jane@clientco.com"
+            />
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
+            <button type="button" className="btn-danger-solid" onClick={() => onConfirm({ reason, email })}>
+              Mark as Lost
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -180,7 +342,7 @@ function SummaryCard({ label, value, sub, accent }) {
   )
 }
 
-function RetainerTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
+function RetainerTable({ clients, defaultRate, onToggle, onEdit, onDelete, onOpenDetail, lostReasons, clientDetails }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
@@ -238,9 +400,25 @@ function RetainerTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
             const rate    = c.hourlyRate || defaultRate
             const monthly = c.budgetHours * rate
             const annual  = monthly * 12
+            const info    = lostReasons?.[c.name]
             return (
               <tr key={c.name}>
-                <td className="client-name">{c.name}</td>
+                <td className="client-name">
+                  <button type="button" className="client-name-btn" onClick={() => onOpenDetail(c.name)}>
+                    {c.name}
+                    {hasDetails(clientDetails?.[c.name]) && <span className="detail-dot" title="Has saved details">●</span>}
+                  </button>
+                  {info && (
+                    <div className="lost-info">
+                      {info.reason && <span className="lost-reason">"{info.reason}"</span>}
+                      {info.email  && (
+                        <a href={`mailto:${info.email}`} className="lost-email" onClick={e => e.stopPropagation()}>
+                          ✉ {info.email}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td>
                   <select className={`status-select status-select--${c.status}`}
                     value={c.status} onChange={e => onToggle(c.name, e.target.value)}>
@@ -274,7 +452,7 @@ function RetainerTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
   )
 }
 
-function ProjectTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
+function ProjectTable({ clients, defaultRate, onToggle, onEdit, onDelete, onOpenDetail, lostReasons, clientDetails }) {
   const clientValue = c => c.pricingType === 'fixed' ? c.fixedAmount : c.budgetHours * (c.hourlyRate || defaultRate)
   const totalValue = clients.reduce((s, c) => s + clientValue(c), 0)
   const totalHours = clients.filter(c => c.pricingType !== 'fixed').reduce((s, c) => s + c.budgetHours, 0)
@@ -297,9 +475,25 @@ function ProjectTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
             const rate    = c.hourlyRate || defaultRate
             const isFixed = c.pricingType === 'fixed'
             const value   = isFixed ? c.fixedAmount : c.budgetHours * rate
+            const info    = lostReasons?.[c.name]
             return (
               <tr key={c.name}>
-                <td className="client-name">{c.name}</td>
+                <td className="client-name">
+                  <button type="button" className="client-name-btn" onClick={() => onOpenDetail(c.name)}>
+                    {c.name}
+                    {hasDetails(clientDetails?.[c.name]) && <span className="detail-dot" title="Has saved details">●</span>}
+                  </button>
+                  {info && (
+                    <div className="lost-info">
+                      {info.reason && <span className="lost-reason">"{info.reason}"</span>}
+                      {info.email  && (
+                        <a href={`mailto:${info.email}`} className="lost-email" onClick={e => e.stopPropagation()}>
+                          ✉ {info.email}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td>
                   <select className={`status-select status-select--${c.status}`}
                     value={c.status} onChange={e => onToggle(c.name, e.target.value)}>
