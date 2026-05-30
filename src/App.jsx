@@ -105,8 +105,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <div>
-            <h1 className="app-title">Agency Revenue Forecaster</h1>
+          <div className="topbar-brand">
+            <img src="/presidio-logo.png" alt="Presidio" className="topbar-logo" />
             <p className="app-sub">{forecastLabel} · 12-month projection</p>
           </div>
           <div className="topbar-controls">
@@ -142,7 +142,7 @@ export default function App() {
             Existing Clients
           </button>
           <button className={`tab-bar-btn${activeTab === 'forecast' ? ' active' : ''}`} onClick={() => setActiveTab('forecast')}>
-            Forecast Clients
+            Revenue Forecast
           </button>
         </div>
       </div>

@@ -10,6 +10,9 @@ const EMPTY = {
   hoursPerMonth: '',
   retainerDuration: 12,
   projectValue: '',
+  pricingType: 'hourly',   // 'hourly' | 'fixed' — for existing client projects
+  fixedAmount: '',
+  notes: '',
 }
 
 export default function ClientForm({ client, defaultRate, onSave, onClose }) {
@@ -25,16 +28,18 @@ export default function ClientForm({ client, defaultRate, onSave, onClose }) {
     e.preventDefault()
     onSave({
       ...form,
-      hourlyRate: Number(form.hourlyRate) || defaultRate,
-      hoursPerMonth: Number(form.hoursPerMonth) || 0,
-      retainerDuration: Number(form.retainerDuration) || 12,
-      projectValue: Number(form.projectValue) || 0,
+      hourlyRate:      Number(form.hourlyRate)      || defaultRate,
+      hoursPerMonth:   Number(form.hoursPerMonth)   || 0,
+      retainerDuration:Number(form.retainerDuration)|| 12,
+      projectValue:    Number(form.projectValue)    || 0,
+      fixedAmount:     Number(form.fixedAmount)      || 0,
     })
   }
 
-  const isRetainer = form.type === 'retainer' || form.type === 'both'
-  const isProject  = form.type === 'project'  || form.type === 'both'
+  const isRetainer    = form.type === 'retainer' || form.type === 'both'
+  const isProject     = form.type === 'project'  || form.type === 'both'
   const isOpportunity = form.clientCategory === 'opportunity'
+  const isFixed       = !isOpportunity && isProject && form.pricingType === 'fixed'
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -50,25 +55,19 @@ export default function ClientForm({ client, defaultRate, onSave, onClose }) {
           <div className="form-row">
             <label>Client Category</label>
             <div className="category-toggle">
-              <button
-                type="button"
+              <button type="button"
                 className={form.clientCategory === 'opportunity' ? 'active' : ''}
-                onClick={() => set('clientCategory', 'opportunity')}
-              >
+                onClick={() => set('clientCategory', 'opportunity')}>
                 Opportunity
               </button>
-              <button
-                type="button"
+              <button type="button"
                 className={form.clientCategory === 'existing' ? 'active' : ''}
-                onClick={() => set('clientCategory', 'existing')}
-              >
+                onClick={() => set('clientCategory', 'existing')}>
                 Existing Client
               </button>
             </div>
             <p className="form-hint">
-              {isOpportunity
-                ? 'Appears in Biz Dev Forecast'
-                : 'Appears in Hour Tracking'}
+              {isOpportunity ? 'Appears in Forecast Clients' : 'Appears in Existing Clients'}
             </p>
           </div>
 
@@ -99,6 +98,7 @@ export default function ClientForm({ client, defaultRate, onSave, onClose }) {
                   <option value="confirmed">Confirmed</option>
                   <option value="pending">Pending</option>
                   <option value="medium">Medium</option>
+                  <option value="lost">Lost</option>
                 </select>
               </div>
             )}
@@ -107,32 +107,47 @@ export default function ClientForm({ client, defaultRate, onSave, onClose }) {
           {isOpportunity && (
             <div className="form-row">
               <label>Expected Start Date</label>
-              <input
-                type="month"
-                value={form.startDate}
-                onChange={e => set('startDate', e.target.value)}
-              />
+              <input type="month" value={form.startDate} onChange={e => set('startDate', e.target.value)} />
             </div>
           )}
 
-          <div className="form-row">
-            <label>Hourly Rate ($/hr)</label>
-            <input
-              type="number"
-              min="0"
-              value={form.hourlyRate}
-              onChange={e => set('hourlyRate', e.target.value)}
-              placeholder={`Default: $${defaultRate}`}
-            />
-          </div>
+          {/* Project pricing toggle — existing clients only */}
+          {isProject && !isOpportunity && (
+            <div className="form-row">
+              <label>Project Pricing</label>
+              <div className="category-toggle">
+                <button type="button"
+                  className={form.pricingType === 'hourly' ? 'active' : ''}
+                  onClick={() => set('pricingType', 'hourly')}>
+                  Hourly (hrs × rate)
+                </button>
+                <button type="button"
+                  className={form.pricingType === 'fixed' ? 'active' : ''}
+                  onClick={() => set('pricingType', 'fixed')}>
+                  Fixed Amount ($)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Rate — hide for fixed-price projects (rate irrelevant) */}
+          {!isFixed && (
+            <div className="form-row">
+              <label>Hourly Rate ($/hr)</label>
+              <input
+                type="number" min="0"
+                value={form.hourlyRate}
+                onChange={e => set('hourlyRate', e.target.value)}
+                placeholder={`Default: $${defaultRate}`}
+              />
+            </div>
+          )}
 
           {isRetainer && (
             <div className="form-grid">
               <div className="form-row">
                 <label>Hours / Month</label>
-                <input
-                  type="number"
-                  min="0"
+                <input type="number" min="0"
                   value={form.hoursPerMonth}
                   onChange={e => set('hoursPerMonth', e.target.value)}
                   placeholder="e.g. 40"
@@ -141,10 +156,7 @@ export default function ClientForm({ client, defaultRate, onSave, onClose }) {
               {isOpportunity && (
                 <div className="form-row">
                   <label>Retainer Duration (months)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
+                  <input type="number" min="1" max="60"
                     value={form.retainerDuration}
                     onChange={e => set('retainerDuration', e.target.value)}
                     placeholder="e.g. 12"
@@ -155,21 +167,49 @@ export default function ClientForm({ client, defaultRate, onSave, onClose }) {
           )}
 
           {isProject && (
-            <div className="form-row">
-              <label>{isOpportunity ? 'Project Value ($)' : 'Project Budget (hrs)'}</label>
-              <input
-                type="number"
-                min="0"
-                value={isOpportunity ? form.projectValue : form.hoursPerMonth}
-                onChange={e =>
-                  isOpportunity
-                    ? set('projectValue', e.target.value)
-                    : set('hoursPerMonth', e.target.value)
-                }
-                placeholder={isOpportunity ? 'e.g. 25000' : 'e.g. 80'}
-              />
-            </div>
+            isOpportunity ? (
+              /* Forecast client — always dollar value */
+              <div className="form-row">
+                <label>Project Value ($)</label>
+                <input type="number" min="0"
+                  value={form.projectValue}
+                  onChange={e => set('projectValue', e.target.value)}
+                  placeholder="e.g. 25000"
+                />
+              </div>
+            ) : form.pricingType === 'fixed' ? (
+              /* Existing client — fixed dollar amount */
+              <div className="form-row">
+                <label>Fixed Project Amount ($)</label>
+                <input type="number" min="0"
+                  value={form.fixedAmount}
+                  onChange={e => set('fixedAmount', e.target.value)}
+                  placeholder="e.g. 25000"
+                />
+              </div>
+            ) : (
+              /* Existing client — hourly budget */
+              <div className="form-row">
+                <label>Project Budget (hrs)</label>
+                <input type="number" min="0"
+                  value={form.hoursPerMonth}
+                  onChange={e => set('hoursPerMonth', e.target.value)}
+                  placeholder="e.g. 80"
+                />
+              </div>
+            )
           )}
+
+          <div className="form-row">
+            <label>Notes</label>
+            <textarea
+              className="form-notes"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="Internal notes about this client..."
+              rows={3}
+            />
+          </div>
 
           <div className="form-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>

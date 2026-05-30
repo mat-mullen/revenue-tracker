@@ -10,7 +10,7 @@ function fmtMonth(val) {
     .toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
-const STATUS_ORDER = { confirmed: 0, pending: 1, medium: 2 }
+const STATUS_ORDER = { confirmed: 0, pending: 1, medium: 2, lost: 3 }
 
 function SortIcon({ active, dir }) {
   if (!active) return <span className="sort-icon sort-icon--idle">↕</span>
@@ -120,6 +120,7 @@ export default function ClientTable({ clients, defaultRate, onEdit, onDelete, on
             <Th label="Hrs / mo"    colKey="hours"     />
             <Th label="Monthly"     colKey="monthly"   />
             <Th label="12-Mo Value" colKey="annual"    />
+            <Th label="Notes"       sortable={false}   />
             <Th label=""            sortable={false}   />
           </tr>
         </thead>
@@ -139,6 +140,7 @@ export default function ClientTable({ clients, defaultRate, onEdit, onDelete, on
                   <option value="confirmed">Confirmed</option>
                   <option value="pending">Pending</option>
                   <option value="medium">Medium</option>
+                  <option value="lost">Lost</option>
                 </select>
               </td>
               <td>{fmtMonth(client.startDate)}</td>
@@ -146,6 +148,11 @@ export default function ClientTable({ clients, defaultRate, onEdit, onDelete, on
               <td>{client.hoursPerMonth || '—'}</td>
               <td>{monthly > 0 ? fmt(monthly) : <span className="muted">one-time</span>}</td>
               <td>{fmt(annual)}</td>
+              <td className="notes-cell" title={client.notes || ''}>
+                {client.notes
+                  ? <span className="notes-text">{client.notes}</span>
+                  : <span style={{ color: 'var(--muted2)' }}>—</span>}
+              </td>
               <td className="actions">
                 <button className="btn-ghost" onClick={() => onEdit(client)}>Edit</button>
                 <button className="btn-ghost btn-danger" onClick={() => onDelete(client.id)}>Delete</button>
@@ -158,6 +165,7 @@ export default function ClientTable({ clients, defaultRate, onEdit, onDelete, on
             <td colSpan={6}>Total</td>
             <td>{fmt(totalMonthly)}</td>
             <td>{fmt(totalAnnual)}</td>
+            <td></td>
             <td></td>
           </tr>
         </tfoot>
