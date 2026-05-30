@@ -96,6 +96,14 @@ export default function App() {
     setClients(prev => prev.map(c => c.id === id ? { ...c, status } : c))
   }
 
+  function handleMoveToExisting(id) {
+    const client = clients.find(c => c.id === id)
+    if (!client) return
+    if (!window.confirm(`Move "${client.name}" into Existing Clients? They'll be tracked as an active client where you can add contacts and documents.`)) return
+    setClients(prev => prev.map(c => c.id === id ? { ...c, clientCategory: 'existing' } : c))
+    setActiveTab('tracking')
+  }
+
   const [year, month] = forecastStart.split('-')
   const forecastLabel = new Date(Number(year), Number(month) - 1, 1)
     .toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -187,6 +195,7 @@ export default function App() {
                 onEdit={openEdit}
                 onDelete={handleDelete}
                 onStatusChange={handleStatusChange}
+                onMoveToExisting={handleMoveToExisting}
               />
             </section>
           </>

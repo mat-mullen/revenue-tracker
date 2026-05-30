@@ -98,15 +98,22 @@ export default function HourTracking({ defaultRate, addedClients = [], onEdit, o
   }
 
   // Normalise form-added existing clients into the same shape as activeClients
-  const normalisedAdded = addedClients.map(c => ({
-    _id: c.id,
-    name: c.name,
-    budgetHours: c.hoursPerMonth || 0,
-    budgetType: c.type === 'project' ? 'project' : 'monthly',
-    hourlyRate: c.hourlyRate || defaultRate,
-    pricingType: c.pricingType || 'hourly',
-    fixedAmount: c.fixedAmount || 0,
-  }))
+  const normalisedAdded = addedClients.map(c => {
+    const isProject = c.type === 'project'
+    // Forecast (opportunity) projects store their value in `projectValue` with
+    // no hourly breakdown. When such a client is moved to Existing, carry that
+    // value over as a fixed amount so revenue isn't lost.
+    const fromForecastProject = isProject && !c.hoursPerMonth && c.projectValue
+    return {
+      _id: c.id,
+      name: c.name,
+      budgetHours: c.hoursPerMonth || 0,
+      budgetType: isProject ? 'project' : 'monthly',
+      hourlyRate: c.hourlyRate || defaultRate,
+      pricingType: fromForecastProject ? 'fixed' : (c.pricingType || 'hourly'),
+      fixedAmount: fromForecastProject ? c.projectValue : (c.fixedAmount || 0),
+    }
+  })
 
   // Merge: managed clients override static ones by name; hidden static clients are excluded
   const managedNames = new Set(normalisedAdded.map(c => c.name))

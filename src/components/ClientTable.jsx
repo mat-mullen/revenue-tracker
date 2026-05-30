@@ -17,7 +17,7 @@ function SortIcon({ active, dir }) {
   return <span className="sort-icon sort-icon--active">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
-export default function ClientTable({ clients, defaultRate, onEdit, onDelete, onStatusChange }) {
+export default function ClientTable({ clients, defaultRate, onEdit, onDelete, onStatusChange, onMoveToExisting }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
@@ -154,6 +154,10 @@ export default function ClientTable({ clients, defaultRate, onEdit, onDelete, on
                   : <span style={{ color: 'var(--muted2)' }}>—</span>}
               </td>
               <td className="actions">
+                {client.status === 'confirmed' && onMoveToExisting && (
+                  <button className="btn-ghost btn-move" title="Move to Existing Clients"
+                    onClick={() => onMoveToExisting(client.id)}>→ Existing</button>
+                )}
                 <button className="btn-ghost" onClick={() => onEdit(client)}>Edit</button>
                 <button className="btn-ghost btn-danger" onClick={() => onDelete(client.id)}>Delete</button>
               </td>
