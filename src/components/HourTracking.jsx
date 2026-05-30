@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { activeClients } from '../data/activeClients'
 
-const STATUS_KEY = 'arf-tracking-statuses'
+const STATUS_KEY  = 'arf-tracking-statuses'
+const HIDDEN_KEY  = 'arf-hidden-clients'
 const STATUS_ORDER = { active: 0, inactive: 1, lost: 2 }
 
 function SortIcon({ active, dir }) {
@@ -9,12 +10,13 @@ function SortIcon({ active, dir }) {
   return <span className="sort-icon sort-icon--active">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
-export default function HourTracking({ defaultRate, addedClients = [] }) {
+export default function HourTracking({ defaultRate, addedClients = [], onEdit, onDeleteManaged }) {
   const [statuses, setStatuses] = useState(() => {
-    try {
-      const s = localStorage.getItem(STATUS_KEY)
-      return s ? JSON.parse(s) : {}
-    } catch { return {} }
+    try { return JSON.parse(localStorage.getItem(STATUS_KEY) || '{}') } catch { return {} }
+  })
+
+  const [hidden, setHidden] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')) } catch { return new Set() }
   })
 
   const [tab, setTab] = useState('active')
@@ -23,22 +25,27 @@ export default function HourTracking({ defaultRate, addedClients = [] }) {
     localStorage.setItem(STATUS_KEY, JSON.stringify(statuses))
   }, [statuses])
 
+  useEffect(() => {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]))
+  }, [hidden])
+
   function toggleStatus(name, value) {
     setStatuses(prev => ({ ...prev, [name]: value }))
   }
 
   // Normalise form-added existing clients into the same shape as activeClients
   const normalisedAdded = addedClients.map(c => ({
+    _id: c.id,                  // keep original id for edit/delete routing
     name: c.name,
     budgetHours: c.hoursPerMonth || 0,
     budgetType: c.type === 'project' ? 'project' : 'monthly',
     hourlyRate: c.hourlyRate || defaultRate,
   }))
 
-  // Merge static seed data with dynamically added clients (deduplicate by name)
-  const addedNames = new Set(normalisedAdded.map(c => c.name))
+  // Merge: managed clients override static ones by name; hidden static clients are excluded
+  const managedNames = new Set(normalisedAdded.map(c => c.name))
   const mergedClients = [
-    ...activeClients.filter(c => !addedNames.has(c.name)),
+    ...activeClients.filter(c => !managedNames.has(c.name) && !hidden.has(c.name)),
     ...normalisedAdded,
   ]
 
@@ -51,121 +58,111 @@ export default function HourTracking({ defaultRate, addedClients = [] }) {
   const inactive = withStatus.filter(c => c.status === 'inactive')
   const lost     = withStatus.filter(c => c.status === 'lost')
 
-  // Retainers = monthly, Projects = one-time (all statuses)
-  const activeRetainers  = active.filter(c => c.budgetType === 'monthly')
-  const allProjects      = withStatus.filter(c => c.budgetType === 'project')
-  const activeProjects   = allProjects.filter(c => c.status === 'active')
+  const activeRetainers = active.filter(c => c.budgetType === 'monthly')
+  const allProjects     = withStatus.filter(c => c.budgetType === 'project')
+  const activeProjects  = allProjects.filter(c => c.status === 'active')
 
-  const totalMonthlyRevenue  = activeRetainers.reduce((s, c) => s + c.budgetHours * (c.hourlyRate || defaultRate), 0)
-  const totalProjectRevenue  = activeProjects.reduce((s, c) => s + c.budgetHours * (c.hourlyRate || defaultRate), 0)
+  const totalMonthlyRevenue = activeRetainers.reduce((s, c) => s + c.budgetHours * (c.hourlyRate || defaultRate), 0)
+  const totalProjectRevenue = activeProjects.reduce((s, c) => s + c.budgetHours * (c.hourlyRate || defaultRate), 0)
+
+  // Edit: convert static client data to ClientForm shape, then open the form
+  function handleEdit(c) {
+    const formData = c._id
+      ? addedClients.find(a => a.id === c._id) // managed: pass original client object
+      : {
+          name: c.name,
+          clientCategory: 'existing',
+          type: c.budgetType === 'project' ? 'project' : 'retainer',
+          status: 'confirmed',
+          hourlyRate: c.hourlyRate || defaultRate,
+          hoursPerMonth: c.budgetType === 'monthly' ? c.budgetHours : 0,
+          projectValue: 0,
+          retainerDuration: 12,
+        }
+    onEdit(formData)
+  }
+
+  // Delete: managed → remove from state; static → add to hidden list
+  function handleDelete(c) {
+    if (!window.confirm(`Remove "${c.name}"?`)) return
+    if (c._id) {
+      onDeleteManaged(c._id)
+    } else {
+      setHidden(prev => new Set([...prev, c.name]))
+    }
+  }
+
+  const tableProps = { defaultRate, onToggle: toggleStatus, onEdit: handleEdit, onDelete: handleDelete }
 
   return (
     <div className="tracking-wrap">
-      {/* Tab toggle */}
       <div className="tracking-tabs">
         <button className={tab === 'active' ? 'active' : ''} onClick={() => setTab('active')}>
-          Active
-          <span className="count-badge">{active.length}</span>
+          Active <span className="count-badge">{active.length}</span>
         </button>
         <button className={tab === 'inactive' ? 'active' : ''} onClick={() => setTab('inactive')}>
-          Inactive
-          {inactive.length > 0 && <span className="count-badge">{inactive.length}</span>}
+          Inactive {inactive.length > 0 && <span className="count-badge">{inactive.length}</span>}
         </button>
         <button className={tab === 'lost' ? 'active' : ''} onClick={() => setTab('lost')}>
-          Lost
-          {lost.length > 0 && <span className="count-badge">{lost.length}</span>}
+          Lost {lost.length > 0 && <span className="count-badge">{lost.length}</span>}
         </button>
         <button className={tab === 'projects' ? 'active' : ''} onClick={() => setTab('projects')}>
-          Projects
-          {allProjects.length > 0 && <span className="count-badge">{allProjects.length}</span>}
+          Projects {allProjects.length > 0 && <span className="count-badge">{allProjects.length}</span>}
         </button>
       </div>
 
       {tab === 'active' ? (
         <>
-          {/* Summary cards */}
           <div className="tracking-summary tracking-summary--3col">
-            <SummaryCard
-              label="Active Clients"
-              value={active.length}
-              sub={activeRetainers.length + ' retainers · ' + activeProjects.length + ' projects'}
-              accent="green"
-            />
-            <SummaryCard
-              label="Est. Monthly Revenue"
-              value={'$' + totalMonthlyRevenue.toLocaleString()}
-              sub={'$' + (totalMonthlyRevenue * 12).toLocaleString() + ' annually'}
-              accent="green"
-            />
-            <SummaryCard
-              label="Annual Project Revenue"
-              value={'$' + totalProjectRevenue.toLocaleString()}
-              sub={activeProjects.length + ' active one-time project' + (activeProjects.length !== 1 ? 's' : '')}
-              accent="brand"
-            />
+            <SummaryCard label="Active Clients" value={active.length}
+              sub={activeRetainers.length + ' retainers · ' + activeProjects.length + ' projects'} accent="green" />
+            <SummaryCard label="Est. Monthly Revenue" value={'$' + totalMonthlyRevenue.toLocaleString()}
+              sub={'$' + (totalMonthlyRevenue * 12).toLocaleString() + ' annually'} accent="green" />
+            <SummaryCard label="Annual Project Revenue" value={'$' + totalProjectRevenue.toLocaleString()}
+              sub={activeProjects.length + ' active one-time project' + (activeProjects.length !== 1 ? 's' : '')} accent="brand" />
           </div>
 
-          {/* Monthly retainers table */}
           <div className="section">
             <div className="section-head">
-              <h2 className="section-title">
-                Monthly Retainers
-                <span className="count-badge">{activeRetainers.length}</span>
-              </h2>
+              <h2 className="section-title">Monthly Retainers <span className="count-badge">{activeRetainers.length}</span></h2>
               <span className="section-note">Using default rate ${defaultRate}/hr</span>
             </div>
-            <RetainerTable clients={activeRetainers} defaultRate={defaultRate} onToggle={toggleStatus} />
+            <RetainerTable clients={activeRetainers} {...tableProps} />
           </div>
         </>
       ) : tab === 'inactive' ? (
         <div className="section">
           <div className="section-head">
-            <h2 className="section-title">
-              Inactive Clients <span className="count-badge">{inactive.length}</span>
-            </h2>
+            <h2 className="section-title">Inactive Clients <span className="count-badge">{inactive.length}</span></h2>
           </div>
           {inactive.length === 0
             ? <div className="empty-state">No inactive clients.</div>
-            : <RetainerTable clients={inactive} defaultRate={defaultRate} onToggle={toggleStatus} />}
+            : <RetainerTable clients={inactive} {...tableProps} />}
         </div>
       ) : tab === 'lost' ? (
         <div className="section">
           <div className="section-head">
-            <h2 className="section-title">
-              Lost Clients <span className="count-badge">{lost.length}</span>
-            </h2>
+            <h2 className="section-title">Lost Clients <span className="count-badge">{lost.length}</span></h2>
           </div>
           {lost.length === 0
             ? <div className="empty-state">No lost clients.</div>
-            : <RetainerTable clients={lost} defaultRate={defaultRate} onToggle={toggleStatus} />}
+            : <RetainerTable clients={lost} {...tableProps} />}
         </div>
       ) : (
-        /* Projects tab */
         <>
           <div className="tracking-summary tracking-summary--2col">
-            <SummaryCard
-              label="Annual Project Revenue"
-              value={'$' + totalProjectRevenue.toLocaleString()}
-              sub={activeProjects.length + ' active · ' + allProjects.filter(c => c.status !== 'active').length + ' inactive / lost'}
-              accent="brand"
-            />
-            <SummaryCard
-              label="Total Project Hours"
+            <SummaryCard label="Annual Project Revenue" value={'$' + totalProjectRevenue.toLocaleString()}
+              sub={activeProjects.length + ' active · ' + allProjects.filter(c => c.status !== 'active').length + ' inactive / lost'} accent="brand" />
+            <SummaryCard label="Total Project Hours"
               value={activeProjects.reduce((s, c) => s + c.budgetHours, 0).toLocaleString() + ' hrs'}
-              sub={'Across ' + activeProjects.length + ' active project' + (activeProjects.length !== 1 ? 's' : '')}
-              accent="brand"
-            />
+              sub={'Across ' + activeProjects.length + ' active project' + (activeProjects.length !== 1 ? 's' : '')} accent="brand" />
           </div>
-
           <div className="section">
             <div className="section-head">
-              <h2 className="section-title">
-                One-Time Projects
-                <span className="count-badge">{allProjects.length}</span>
-              </h2>
+              <h2 className="section-title">One-Time Projects <span className="count-badge">{allProjects.length}</span></h2>
               <span className="section-note">Using default rate ${defaultRate}/hr</span>
             </div>
-            <ProjectTable clients={allProjects} defaultRate={defaultRate} onToggle={toggleStatus} />
+            <ProjectTable clients={allProjects} {...tableProps} />
           </div>
         </>
       )}
@@ -183,30 +180,22 @@ function SummaryCard({ label, value, sub, accent }) {
   )
 }
 
-function RetainerTable({ clients, defaultRate, onToggle }) {
+function RetainerTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
   function handleSort(key) {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
+    sortKey === key ? setSortDir(d => d === 'asc' ? 'desc' : 'asc') : (setSortKey(key), setSortDir('asc'))
   }
 
   function Th({ label, colKey, sortable = true }) {
-    const active = sortKey === colKey
+    const isActive = sortKey === colKey
     return (
-      <th
-        style={{ cursor: sortable ? 'pointer' : 'default', userSelect: 'none' }}
+      <th style={{ cursor: sortable ? 'pointer' : 'default', userSelect: 'none' }}
         onClick={sortable ? () => handleSort(colKey) : undefined}
-        className={active ? 'th--active' : ''}
-      >
+        className={isActive ? 'th--active' : ''}>
         <span className="th-inner">
-          {label}
-          {sortable && <SortIcon active={active} dir={sortDir} />}
+          {label}{sortable && <SortIcon active={isActive} dir={sortDir} />}
         </span>
       </th>
     )
@@ -214,19 +203,17 @@ function RetainerTable({ clients, defaultRate, onToggle }) {
 
   const sorted = [...clients].sort((a, b) => {
     if (!sortKey) return 0
-    let av, bv
-    switch (sortKey) {
-      case 'name':   av = a.name.toLowerCase(); bv = b.name.toLowerCase(); break
-      case 'status': av = STATUS_ORDER[a.status] ?? 99; bv = STATUS_ORDER[b.status] ?? 99; break
-      case 'rate':   av = a.hourlyRate || defaultRate; bv = b.hourlyRate || defaultRate; break
-      case 'hours':  av = a.budgetHours; bv = b.budgetHours; break
-      case 'monthly':av = a.budgetHours * (a.hourlyRate || defaultRate); bv = b.budgetHours * (b.hourlyRate || defaultRate); break
-      case 'annual': av = a.budgetHours * (a.hourlyRate || defaultRate) * 12; bv = b.budgetHours * (b.hourlyRate || defaultRate) * 12; break
-      default: return 0
+    const rate = c => c.hourlyRate || defaultRate
+    const vals = {
+      name:    [a.name.toLowerCase(), b.name.toLowerCase()],
+      status:  [STATUS_ORDER[a.status] ?? 99, STATUS_ORDER[b.status] ?? 99],
+      rate:    [rate(a), rate(b)],
+      hours:   [a.budgetHours, b.budgetHours],
+      monthly: [a.budgetHours * rate(a), b.budgetHours * rate(b)],
+      annual:  [a.budgetHours * rate(a) * 12, b.budgetHours * rate(b) * 12],
     }
-    if (av < bv) return sortDir === 'asc' ? -1 : 1
-    if (av > bv) return sortDir === 'asc' ? 1 : -1
-    return 0
+    const [av, bv] = vals[sortKey] || [0, 0]
+    return av < bv ? (sortDir === 'asc' ? -1 : 1) : av > bv ? (sortDir === 'asc' ? 1 : -1) : 0
   })
 
   const totalMonthly = clients.reduce((s, c) => s + c.budgetHours * (c.hourlyRate || defaultRate), 0)
@@ -243,6 +230,7 @@ function RetainerTable({ clients, defaultRate, onToggle }) {
             <Th label="HRS / MO"    colKey="hours"   />
             <Th label="Monthly"     colKey="monthly" />
             <Th label="12-MO Value" colKey="annual"  />
+            <Th sortable={false} label="" />
           </tr>
         </thead>
         <tbody>
@@ -254,11 +242,8 @@ function RetainerTable({ clients, defaultRate, onToggle }) {
               <tr key={c.name}>
                 <td className="client-name">{c.name}</td>
                 <td>
-                  <select
-                    className={`status-select status-select--${c.status}`}
-                    value={c.status}
-                    onChange={e => onToggle(c.name, e.target.value)}
-                  >
+                  <select className={`status-select status-select--${c.status}`}
+                    value={c.status} onChange={e => onToggle(c.name, e.target.value)}>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="lost">Lost</option>
@@ -268,6 +253,10 @@ function RetainerTable({ clients, defaultRate, onToggle }) {
                 <td>{c.budgetHours}</td>
                 <td>${monthly.toLocaleString()}</td>
                 <td>${annual.toLocaleString()}</td>
+                <td className="actions">
+                  <button className="btn-ghost" onClick={() => onEdit(c)}>Edit</button>
+                  <button className="btn-ghost btn-danger" onClick={() => onDelete(c)}>Delete</button>
+                </td>
               </tr>
             )
           })}
@@ -277,6 +266,7 @@ function RetainerTable({ clients, defaultRate, onToggle }) {
             <td colSpan={4}>Total</td>
             <td>${totalMonthly.toLocaleString()}</td>
             <td>${totalAnnual.toLocaleString()}</td>
+            <td></td>
           </tr>
         </tfoot>
       </table>
@@ -284,7 +274,7 @@ function RetainerTable({ clients, defaultRate, onToggle }) {
   )
 }
 
-function ProjectTable({ clients, defaultRate, onToggle }) {
+function ProjectTable({ clients, defaultRate, onToggle, onEdit, onDelete }) {
   const totalValue = clients.reduce((s, c) => s + c.budgetHours * (c.hourlyRate || defaultRate), 0)
   const totalHours = clients.reduce((s, c) => s + c.budgetHours, 0)
 
@@ -298,6 +288,7 @@ function ProjectTable({ clients, defaultRate, onToggle }) {
             <th>Rate / HR</th>
             <th>Budget HRS</th>
             <th>Project Value</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -308,11 +299,8 @@ function ProjectTable({ clients, defaultRate, onToggle }) {
               <tr key={c.name}>
                 <td className="client-name">{c.name}</td>
                 <td>
-                  <select
-                    className={`status-select status-select--${c.status}`}
-                    value={c.status}
-                    onChange={e => onToggle(c.name, e.target.value)}
-                  >
+                  <select className={`status-select status-select--${c.status}`}
+                    value={c.status} onChange={e => onToggle(c.name, e.target.value)}>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="lost">Lost</option>
@@ -321,6 +309,10 @@ function ProjectTable({ clients, defaultRate, onToggle }) {
                 <td>${rate.toLocaleString()}</td>
                 <td>{c.budgetHours}</td>
                 <td>${value.toLocaleString()}</td>
+                <td className="actions">
+                  <button className="btn-ghost" onClick={() => onEdit(c)}>Edit</button>
+                  <button className="btn-ghost btn-danger" onClick={() => onDelete(c)}>Delete</button>
+                </td>
               </tr>
             )
           })}
@@ -330,6 +322,7 @@ function ProjectTable({ clients, defaultRate, onToggle }) {
             <td colSpan={3}>Total</td>
             <td>{totalHours}</td>
             <td>${totalValue.toLocaleString()}</td>
+            <td></td>
           </tr>
         </tfoot>
       </table>

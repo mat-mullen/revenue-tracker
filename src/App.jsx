@@ -191,7 +191,12 @@ export default function App() {
             </section>
           </>
         ) : (
-          <HourTracking defaultRate={defaultRate} addedClients={existingClients} />
+          <HourTracking
+            defaultRate={defaultRate}
+            addedClients={existingClients}
+            onEdit={openEdit}
+            onDeleteManaged={handleDelete}
+          />
         )}
       </main>
 
